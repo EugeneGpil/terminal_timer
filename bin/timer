@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Thin wrapper so `timer 45:00 tea` works from anywhere (make can't take --flags,
+# so --plain/--fancy are translated to TIMER_MODE for the container).
+
+# resolve the real script location even when called through a symlink (portable: no readlink -f on macOS)
+SELF="$0"
+while [ -h "$SELF" ]; do
+    DIR="$(cd -P "$(dirname "$SELF")" && pwd)"
+    SELF="$(readlink "$SELF")"
+    case "$SELF" in /*) ;; *) SELF="$DIR/$SELF" ;; esac
+done
+REPO="$(cd -P "$(dirname "$SELF")/.." && pwd)"
+
+env_args=()
+args=()
+for a in "$@"; do
+    case "$a" in
+        --plain|-p) env_args+=("TIMER_MODE=plain") ;;
+        --fancy|-f) env_args+=("TIMER_MODE=fancy") ;;
+        *) args+=("$a") ;;
+    esac
+done
+
+exec env "${env_args[@]}" docker compose --project-directory "$REPO" run --rm timer php app/timer.php "${args[@]}"
