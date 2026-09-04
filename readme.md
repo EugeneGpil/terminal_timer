@@ -9,6 +9,7 @@ Features:
   one-liner in narrow terminals, pipes, scripts)
 - Repeating alarm sound — impossible to miss, stops on Enter
 - Desktop notification that is closed automatically when you stop the alarm
+- Telegram message when the timer finishes (optional, one bot token in `.env`)
 - Stopping it in any way — Ctrl+C, closed terminal, crash, reboot — just stops
   the clock; `continue` resumes from exactly where it stopped
 
@@ -134,6 +135,15 @@ cp .env.example .env
 | `TIMER_MODE` | `plain` / `fancy` / empty | empty (auto) | Force the display mode. Auto picks fancy (big digits + progress bar) on a terminal at least 64 columns wide, plain otherwise. |
 | `UID` | your `id -u` | `1000` | Host user the container runs as — must match your desktop session, or audio and notifications are rejected. |
 | `GID` | your `id -g` | `1000` | Host group the container runs as. |
+| `TELEGRAM_BOT_TOKEN` | bot token | empty | Token from @BotFather. Empty disables the Telegram message. |
+| `TELEGRAM_CHAT_ID` | chat id | empty | Chat the message goes to. Empty disables the Telegram message. |
+
 
 Precedence: `--plain`/`--fancy` wrapper flags > `TIMER_MODE` in the shell
 environment > `.env` > auto-detect.
+
+### Telegram notification
+
+When both `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` are set, the moment the
+alarm starts ringing a message is also sent to that chat — so a finished timer
+reaches you when you are away from the machine.

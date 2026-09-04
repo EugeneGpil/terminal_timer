@@ -13,7 +13,8 @@ declare(strict_types=1);
  * stops the clock: the remaining time is persisted every second, and `continue`
  * resumes from exactly where it stopped — elapsed real time never counts.
  * The alarm sound repeats until Enter (or Ctrl+C); the desktop notification is
- * closed together with the alarm. When a Moonlight client is connected (something
+ * closed together with the alarm. A Telegram message is sent too when a bot token
+ * and chat id are configured in .env. When a Moonlight client is connected (something
  * captures the Sunshine sink monitor), the alarm plays ONLY on the Sunshine sink.
  */
 
@@ -147,6 +148,37 @@ function drawFrame(int $left, int $startLeft, int $end, string $msg, bool &$draw
 }
 
 /**
+ * Telegram message at the alarm — only when .env carries a bot token and chat id.
+ * A dead network must never hold the alarm back, so the request is tightly bounded
+ * and a failure is reported rather than retried.
+ */
+function notifyTelegram(string $msg, string $finishedAt): void
+{
+    $token = (string) getenv('TELEGRAM_BOT_TOKEN');
+    $chatId = (string) getenv('TELEGRAM_CHAT_ID');
+    if ($token === '' || $chatId === '') {
+        return;
+    }
+    $ch = curl_init("https://api.telegram.org/bot{$token}/sendMessage");
+    curl_setopt_array($ch, [
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => http_build_query([
+            'chat_id' => $chatId,
+            'text' => "⏰ Timer finished at {$finishedAt}\n{$msg}",
+        ]),
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_CONNECTTIMEOUT => 3,
+        CURLOPT_TIMEOUT => 5,
+    ]);
+    $body = (string) curl_exec($ch);
+    $error = curl_error($ch);
+    if (!str_contains($body, '"ok":true')) {
+        $reason = $error !== '' ? $error : trim($body);
+        fwrite(STDERR, "timer: telegram notification failed — {$reason}\n");
+    }
+}
+
+/**
  * The Sunshine sink name, but only while a Moonlight client is connected —
  * i.e. something (Sunshine) is capturing the sink's monitor source.
  */
@@ -209,8 +241,9 @@ $cmd = $args[0];
 
 if ($cmd === 'cancel') {
     if (is_file($stateFile)) {
+        $left = (int) trim((string) (file($stateFile, FILE_IGNORE_NEW_LINES)[0] ?? '0'));
         unlink($stateFile);
-        echo "timer: cancelled\n";
+        echo 'timer: cancelled at ' . endTime(time()) . ' with ' . hms(max(0, $left)) . " left\n";
     } else {
         echo "timer: no saved timer\n";
     }
@@ -228,11 +261,11 @@ if ($cmd === 'continue' || $cmd === 'c') {
     if ($left > 0) {
         // the state always holds the remaining time — resume from exactly there
         $end = time() + $left;
-        echo '⏱  Resumed with ' . hms($left) . ' left — ends at ' . endTime($end) . "  ($msg)\n";
+        echo '⏱  Resumed at ' . endTime(time()) . ' with ' . hms($left) . ' left — ends at ' . endTime($end) . "  ($msg)\n";
     } else {
         // it stopped during the ring: fire the alarm right away
         $end = time();
-        echo "⏰ Timer had already finished  ($msg)\n";
+        echo '⏰ Timer had already finished — ringing now at ' . endTime(time()) . "  ($msg)\n";
     }
 } else {
     $total = parseDuration($cmd);
@@ -242,7 +275,7 @@ if ($cmd === 'continue' || $cmd === 'c') {
     $msg = count($args) > 1 ? implode(' ', array_slice($args, 1)) : 'Time is up!';
     $end = time() + $total;
     saveState($stateFile, $total, $msg);
-    echo "⏱  Timer: {$cmd} — ends at " . endTime($end) . "  ($msg)\n";
+    echo "⏱  Timer: {$cmd} — started at " . endTime(time()) . ' — ends at ' . endTime($end) . "  ($msg)\n";
 }
 
 // ---------------------------------------------------------------- countdown
@@ -269,7 +302,7 @@ $pause = function () use (&$end, $stateFile, $msg, $cleanupTty): never {
     $cleanupTty();
     $left = max(1, $end - time());
     saveState($stateFile, $left, $msg);
-    out("\n⏸  paused with " . hms($left) . " left — resume: make timer continue | forget: make timer cancel\n");
+    out("\n⏸  paused at " . endTime(time()) . ' with ' . hms($left) . " left — resume: make timer continue | forget: make timer cancel\n");
     exit(130);
 };
 pcntl_signal(SIGINT, $pause);
@@ -321,10 +354,13 @@ if (is_string($idOut) && ctype_digit(trim($idOut))) {
     $notifyId = (int) trim($idOut);
 }
 
+$finishedAt = endTime(time());
+notifyTelegram($msg, $finishedAt);
+
 if ($fancy) {
-    out("\x07\n  \e[1;31m⏰  T I M E   I S   U P  ⏰\e[0m\n  \e[1m{$msg}\e[0m\n\n");
+    out("\x07\n  \e[1;31m⏰  T I M E   I S   U P  ⏰\e[0m\n  \e[1m{$msg}\e[0m\n  finished at {$finishedAt}\n\n");
 } else {
-    out("⏰ {$msg}\n");
+    out("⏰ {$msg} — finished at {$finishedAt}\n");
 }
 out('   Press Enter to stop the alarm... ');
 
