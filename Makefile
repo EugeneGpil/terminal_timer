@@ -2,6 +2,8 @@
 # Everything after "timer" is passed to the PHP app inside the container.
 .PHONY: timer build
 
+export TZ := $(shell timedatectl show -p Timezone --value 2>/dev/null)
+
 ARGS = $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 
 timer:
